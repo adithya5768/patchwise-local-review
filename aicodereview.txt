@@ -1,0 +1,86 @@
+> net/smc: implement DMB-related operations of loopback-ism
+>
+> This implements DMB (un)registration and data move operations of
+> loopback-ism device.
+>
+> Signed-off-by: Wen Gu <guwen@linux.alibaba.com>
+> Reviewed-by: Wenjia Zhang <wenjia@linux.ibm.com>
+> Reviewed-and-tested-by: Jan Karcher <jaka@linux.ibm.com>
+> Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+>
+> diff --git a/net/smc/smc_loopback.c b/net/smc/smc_loopback.c
+
+[ ... ]
+
+> @@ -48,6 +50,125 @@ static int smc_lo_query_rgid(struct smcd_dev *smcd, struct smcd_gid *rgid,
+
+[ ... ]
+
+> +	read_lock_bh(&ldev->dmb_ht_lock);
+> +	hash_for_each_possible(ldev->dmb_ht, tmp_node, list, dmb_tok) {
+> +		if (tmp_node->token == dmb_tok) {
+> +			rmb_node = tmp_node;
+> +			break;
+> +		}
+> +	}
+> +	if (!rmb_node) {
+> +		read_unlock_bh(&ldev->dmb_ht_lock);
+> +		return -EINVAL;
+> +	}
+> +	memcpy((char *)rmb_node->cpu_addr + offset, data, size);
+
+[bounds checking and write atomicity] Missing bounds check for offset+size
+against rmb_node->len before memcpy. Unbounded offsets allow writes past
+the allocated buffer, causing memory corruption. Validate that offset +
+size <= rmb_node->len before copying data.
+
+> +	read_unlock_bh(&ldev->dmb_ht_lock);
+
+[lock granularity and hot-path performance] Excessive lock hold time during
+memcpy. read_lock_bh covers hash lookup, memcpy, and unlock, blocking
+writers and risking starvation. Copy token and sba_idx to local variables,
+release the lock, then perform the memcpy outside the critical section.
+
+> +
+> +	if (sf) {
+> +		conn = smcd->conn[rmb_node->sba_idx];
+> +		if (conn && !conn->killed)
+> +			tasklet_schedule(&conn->rx_tsklet);
+
+[concurrency and node lifetime management] Use-after-free race in
+smc_lo_move_data. The code dereferences rmb_node after dropping
+read_lock_bh. Between unlocking and accessing rmb_node,
+smc_lo_unregister_dmb can free the node. Hold a reference (e.g., RCU or
+refcount) to extend its lifetime, or read sba_idx before releasing the
+lock.
+
+
+[connection notification and tasklet scheduling] Unprotected access to
+smcd->conn[] array. The connection pointer is read without holding
+smcd->lock, risking stale or freed memory access. Hold smcd->lock during
+connection array reads, following the pattern used in smc_ism.c.
+
+> +		else
+
+[connection notification and tasklet scheduling] Race on conn->killed check
+without lock protection. The connection can be freed between the null check
+and tasklet_schedule. Hold smcd->lock during the entire connection access
+and tasklet scheduling sequence to prevent use-after-free.
+
+
+[ ... ]
+
+> @@ -146,6 +267,8 @@ static void smcd_lo_unregister_dev(struct smc_lo_dev *ldev)
+>  static int smc_lo_dev_init(struct smc_lo_dev *ldev)
+>  {
+>  	smc_lo_generate_ids(ldev);
+> +	rwlock_init(&ldev->dmb_ht_lock);
+> +	hash_init(ldev->dmb_ht);
+>  	return smcd_lo_register_dev(ldev);
+>  }
+
+[memory allocation and error unwind paths] Missing cleanup of DMB nodes on
+module exit. smcd_lo_unregister_dev() does not free registered
+smc_lo_dmb_node structures or their cpu_addr allocations. Iterate through
+the dmb_ht hash table and free all entries during module exit to prevent
+memory leaks.

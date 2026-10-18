@@ -1,0 +1,28 @@
+● Here's my review of the commit. The other Claude session's message was incomplete (no findings were actually listed), so I performed a thorough review myself and found 3 confirmed issues:
+
+  ---
+
+  1. Race condition on smcd->conn[] access (line 163)
+
+  File: net/smc/smc_loopback.c:163
+
+  smc_lo_move_data reads smcd->conn[rmb_node->sba_idx] while only holding the read side of dmb_ht_lock. However, the smcd->conn array is protected by smcd->lock (a spinlock), as shown in:
+  - smc_ism_set_conn() (line 99) — writes to smcd->conn[] under smcd->lock
+  - smc_ism_unset_conn() (line 112) — writes to smcd->conn[] under smcd->lock
+  - smcd_handle_irq() (line 525) — reads smcd->conn[] under smcd->lock
+
+  The fix: acquire smcd->lock (or at minimum a read-side equivalent) when accessing smcd->conn[]. Currently, smc_lo_move_data could race with smc_ism_set_conn/unset_conn, leading to use-after-free or NULL dereference.
+
+  2. Memory leak on device exit (line 275)
+
+  File: net/smc/smc_loopback.c:275
+
+  smc_lo_dev_exit() → smcd_lo_unregister_dev() only frees smcd->conn and smcd. It does not iterate over and free the DMB hash table (ldev->dmb_ht). If any DMBs are still registered when the module unloads, all smc_lo_dmb_node structs and their cpu_addr
+  buffers are leaked.
+
+  3. Data copied but error returned when sf=true and connection invalid (line 167)
+
+  File: net/smc/smc_loopback.c:159,167
+
+  When sf (shutdown/finish) is true and conn is NULL or killed, the function returns -EPIPE after already performing the memcpy. The data is written to the RMB buffer but the caller (smc_ism_write) receives an error. This is inconsistent — either the
+  data shouldn't be copied, or the error shouldn't be returned.

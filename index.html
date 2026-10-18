@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Running PatchWise on a local model with 16 GB VRAM</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg2: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text2: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.3rem;
+    }
+    .date {
+      color: var(--text2);
+      font-size: 0.85rem;
+      margin-bottom: 2rem;
+    }
+    h2 {
+      font-size: 1.3rem;
+      margin-top: 2.5rem;
+      margin-bottom: 0.8rem;
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 {
+      font-size: 1.05rem;
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+    p { margin-bottom: 1rem; }
+    code {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.35em;
+      font-size: 0.88em;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    }
+    pre {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.8rem 1rem;
+      overflow-x: auto;
+      margin-bottom: 1rem;
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: inherit;
+    }
+    .finding {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-left: 3px solid #c9d1d9;
+      border-radius: 4px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 0.8rem;
+    }
+    .finding.fp { border-left-color: #e3b341; }
+    .finding.highlighted { border-left: 3px solid var(--green); box-shadow: 0 0 12px rgba(63,185,80,0.15); }
+    .finding-title {
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+    .finding-file {
+      font-size: 0.78rem;
+      color: var(--text2);
+      font-family: 'SF Mono', Consolas, monospace;
+    }
+    .finding-body {
+      font-size: 0.9rem;
+      margin-top: 0.3rem;
+      color: var(--text2);
+    }
+    .screenshots {
+      margin-bottom: 2rem;
+    }
+    .screenshots .shot {
+      margin-bottom: 1.5rem;
+      cursor: zoom-in;
+    }
+    .screenshots .shot img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      transition: opacity 0.15s;
+    }
+    .screenshots .shot:hover img {
+      opacity: 0.85;
+    }
+    .screenshot-caption {
+      font-size: 0.85rem;
+      color: var(--text2);
+      margin-top: 0.4rem;
+      text-align: center;
+    }
+    /* Lightbox */
+    .lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      cursor: zoom-out;
+    }
+    .lightbox.active {
+      display: flex;
+    }
+    .lightbox img {
+      max-width: 95vw;
+      max-height: 95vh;
+      object-fit: contain;
+      border-radius: 4px;
+      cursor: default;
+    }
+    .lightbox .lb-caption {
+      position: absolute;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ccc;
+      font-size: 0.9rem;
+      text-align: center;
+      pointer-events: none;
+    }
+    .inline-review {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.2rem;
+      margin-bottom: 1rem;
+      font-size: 0.82rem;
+      line-height: 1.7;
+      overflow-x: auto;
+      white-space: pre;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      color: var(--text2);
+    }
+    .inline-review .annotation {
+      color: #c9d1d9;
+    }
+    .inline-review .annotation.main {
+      color: var(--green);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      font-size: 0.88rem;
+    }
+    th, td {
+      padding: 0.5rem 0.8rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: var(--bg2);
+      font-weight: 600;
+    }
+    td:first-child { color: var(--text2); }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--text2);
+      font-size: 0.82rem;
+    }
+    @media (max-width: 600px) {
+      .screenshots .shot img { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Running PatchWise on a local model with 16 GB VRAM</h1>
+  <p class="date">October 2026 · PatchWise 0.9.3</p>
+
+  <p>
+    I've been playing with <a href="https://github.com/qualcomm/PatchWise" style="color: var(--accent);">PatchWise</a> and wanted to see if it could actually find bugs in real kernel code, especially with a local model on my pc. Borrowing <a href="https://github.com/sashiko-dev/sashiko" style="color: var(--accent);">Sashiko</a>'s idea of reviewing a known buggy commit, I ran it on a commit I knew had a real bug and saw what happened. (I ran Claude Code's <code>/code-review</code> on the same commit for comparison, same model and setup, but this is really a story about PatchWise.)
+  </p>
+
+  <h2>The commit</h2>
+
+  <p>
+    I ran <code>git log --grep "Fixes:" -n 10</code> on <code>linux-next/master</code> and grabbed a fix-bug pair I could understand. The commit <code>f7a22071dbf3</code> added DMB (Data Move Buffer) registration and data move operations for the SMC loopback ISM device.
+  </p>
+
+  <p>
+    The bug was straightforward: a missing bounds check on a <code>memcpy</code>, an OOB access:
+
+    <pre><code>memcpy((char *)rmb_node->cpu_addr + offset, data, size)</code></pre>
+
+    <code>offset + size</code> was never validated against <code>rmb_node->len</code>.
+  </p>
+
+  <p>
+    It was fixed over two years later in <code>78237e3c0720</code> ("dibs: loopback: validate offset and size in move_data()").
+  </p>
+
+  <h2>The model</h2>
+
+  Both tools ran on the same locally-served model: <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF" style="color: var(--accent);">unsloth/Qwen3.6-35B-A3B-MTP-GGUF</a> (UD-Q4_K_XL), served via llama.cpp on localhost.
+
+  <h3>My machine</h3>
+
+  <table>
+    <tr><th>CPU</th><td>AMD Ryzen 5 7600X</td></tr>
+    <tr><th>GPU</th><td>NVIDIA RTX 4070 Ti Super</td></tr>
+    <tr><th>VRAM</th><td>16 GB</td></tr>
+    <tr><th>RAM</th><td>32 GB</td></tr>
+  </table>
+
+  <p>
+    The model is 22.9 GB after Q4 quantization but only has 3B active parameters, so it works on my machine, though I had to tune llama.cpp carefully. About 14 GB of dedicated GPU VRAM and about 29 GB of system RAM was the usage (all of this was in WSL2 while I had a browser open on Windows :D). Here's the full command:
+  </p>
+
+  <pre><code>llama-server     --model ~/DEV/models/Qwen3.6-35B-A3B-MTP-GGUF-UD-Q4_K_XL.gguf \
+    --no-mmproj \
+    --alias "unsloth/Qwen3.6-35B-A3B-MTP-GGUF" \
+    --temp 0.6 \
+    --top-p 0.95 \
+    --top-k 20 \
+    --min-p 0.00 \
+    --port 8001 \
+    --ctx-size 131072 \
+    --cache-type-k q4_0 \
+    --cache-type-v q4_0 \
+    -ngl 99 \
+    --n-cpu-moe 24 \
+    --no-mmap -b 32768 \
+    -ub 2048 \
+    -t 10 \
+    --chat-template-kwargs '{"preserve_thinking": true}' \
+    --flash-attn on \
+    --spec-type draft-mtp \
+    --spec-draft-n-max 2 \
+    --reasoning-preserve</code></pre>
+
+  <p>
+    Prompt processing ran at 1000–2000 tokens/sec, decoding at 60–70 tokens/sec. Not instant, but workable.
+  </p>
+
+  <h2>Review Setup</h2>
+
+  <p>
+    I reset the linux repo to the buggy commit before each review, so neither tool had access to the fix.
+  </p>
+
+  <h3>PatchWise</h3>
+
+  <p>
+    PatchWise uses LiteLLM, which speaks the OpenAI API format. llama.cpp already exposes that, so the config was three lines:
+  </p>
+
+  <pre><code># ~/.config/patchwise_config.yaml
+ai:
+  model: openai/unsloth/Qwen3.6-35B-A3B-MTP-GGUF
+  provider: http://localhost:8001/v1</code></pre>
+
+  <p>
+    Then I ran it:
+  </p>
+
+  <pre><code>patchwise --output-dir ../pw-output --reviews AiCodeReview \
+  --commits f7a22071dbf3</code></pre>
+
+  <p>
+    That was it. PatchWise ran for 16m45s total time (16m18s waiting for AI response). It loaded <code>networking-core.md</code> from <a href="https://github.com/masoncl/review-prompts" style="color: var(--accent);">masoncl/review-prompts</a>, read 10 unique files, grepped for patterns across the codebase, looked up struct definitions and helper macros, and recorded 8 initial findings. It then re-examined the code to filter false positives, keeping 6 and dropping 2 with proof chains. The observability log shows 76 tool calls made. A total of 2.57M tokens were consumed (2.52M input - 95% cached, 44.9k output).
+  </p>
+
+  <p>
+    PatchWise did not cheat — there were zero git tool calls, no <code>git log</code>, no <code>git show</code>, no search for the fix commit. It independently arrived at the original finding.
+  </p>
+
+  <h3>Claude Code</h3>
+
+  <p>
+    For Claude Code v2.1.296, I renamed <code>.git</code> to <code>.git_disabled</code> (so it wouldn't cheat) and pasted the diff inline:
+  </p>
+
+  <pre><code>/code-review the HEAD commit (f7a22071dbf3)
+
+&lt;git show f7a22071dbf3&gt;</code></pre>
+
+  <p>
+    Claude Code was run on the same linux repo. I also tried <a href="https://github.com/sashiko-dev/sashiko" style="color: var(--accent);">Sashiko</a> but it got stuck at stage 4/10 (regularly getting transient errors and retrying with backoffs, probably because of the stages running in parallel). I had to kill it after hours.
+  </p>
+
+  <h2>What PatchWise found</h2>
+
+  <p>
+    Six confirmed issues, plus two it correctly dismissed as false positives after re-examining the code.
+  </p>
+
+  <div class="finding highlighted">
+    <div class="finding-title">Missing bounds check on offset+size vs buffer length</div>
+    <div class="finding-file">net/smc/smc_loopback.c:159</div>
+    <div class="finding-body">
+      The memcpy at line 159:
+      <pre><code>memcpy((char *)rmb_node->cpu_addr + offset, data, size);</code></pre>
+      does not validate that <code>offset + size &lt;= rmb_node->len</code>. If offset is near the end of the buffer and size is large, this writes past the allocated buffer, causing memory corruption. The caller (smc_ism_write -&gt; smcd_tx_ism_write) passes offset from <code>conn->tx_off + offset</code> and len from the user, neither of which is bounded against the DMB length in the loopback path. This is a remote memory corruption vulnerability.
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-title">Use-after-free race</div>
+    <div class="finding-file">net/smc/smc_loopback.c:163</div>
+    <div class="finding-body">
+      <code>smc_lo_move_data</code> accesses <code>rmb_node</code> after dropping <code>read_lock_bh</code>. At line 163, <code>conn = smcd->conn[rmb_node->sba_idx]</code> dereferences <code>rmb_node</code> after <code>read_unlock_bh(&amp;ldev-&gt;dmb_ht_lock)</code> at line 161. Between releasing the lock and this access, <code>smc_lo_unregister_dmb</code> can acquire the write lock, delete the node from the hash table, <code>kfree(dmb_node-&gt;cpu_addr)</code>, and <code>kfree(dmb_node)</code>. This is a clear use-after-free. Compare with <code>smcd_handle_irq</code> in <code>smc_ism.c:526</code> which accesses <code>smcd-&gt;conn[dmbno]</code> while holding <code>smcd-&gt;lock</code>.
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-title">Unprotected access to smcd-&gt;conn[] array</div>
+    <div class="finding-file">net/smc/smc_loopback.c:163</div>
+    <div class="finding-body">
+      At line 163, <code>conn = smcd->conn[rmb_node->sba_idx]</code> reads from the connection array without holding <code>smcd-&gt;lock</code>. The regular ISM implementation in <code>smc_ism.c:100</code> (<code>smc_ism_set_conn</code>), line 113 (<code>smc_ism_unset_conn</code>), and line 526 (<code>smcd_handle_irq</code>) all access <code>smcd-&gt;conn[]</code> while holding <code>smcd-&gt;lock</code>. Without this protection, the pointer read could be stale or point to freed memory between the null check and the <code>conn-&gt;killed</code> access at line 164. This could lead to a use-after-free crash.
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-title">Excessive lock hold time during memcpy</div>
+    <div class="finding-file">net/smc/smc_loopback.c:150-161</div>
+    <div class="finding-body">
+      The <code>read_lock_bh</code> is held from line 150 through line 161 (covering the hash lookup, memcpy, and unlock). The memcpy at line 159 copies user-controlled data and holds the lock during the entire operation. This blocks all writers (register_dmb/unregister_dmb) from acquiring the write lock, potentially starving DMB registration/unregistration. For large DMBs, this could cause significant latency spikes. Consider releasing the lock after copying the token/sba_idx to a local variable, then doing the memcpy outside the lock, or using RCU to eliminate the need for the lock during the hot path.
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-title">Missing cleanup of DMB nodes on module exit</div>
+    <div class="finding-file">net/smc/smc_loopback.c:275-278</div>
+    <div class="finding-body">
+      <code>smc_lo_dev_exit()</code> calls <code>smcd_lo_unregister_dev()</code> which only frees <code>smcd-&gt;conn</code> and <code>smcd</code> itself. It does not iterate through the <code>dmb_ht</code> hash table to free registered <code>smc_lo_dmb_node</code> structures or their <code>cpu_addr</code> allocations. If any DMBs were registered during the module's lifetime, they will leak. Compare with <code>smc_ism_unregister_dmb</code> which properly frees resources. The exit path should either: (1) iterate and free all hash table entries, or (2) ensure unregister_dmb is called for all registered DMBs before exit.
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-title">Race on conn-&gt;killed check without lock protection</div>
+    <div class="finding-file">net/smc/smc_loopback.c:164</div>
+    <div class="finding-body">
+      At line 164, <code>if (conn &amp;&amp; !conn-&gt;killed)</code> checks the connection's killed flag without holding <code>smcd-&gt;lock</code>. The killed flag is set in <code>smc_conn_kill()</code> (<code>net/smc/smc_core.c:1443</code>) and the connection can be freed independently. Even if <code>conn</code> is non-NULL at line 164, it could be freed before line 165 <code>tasklet_schedule(&amp;conn-&gt;rx_tsklet)</code>. The regular ISM implementation (<code>smcd_handle_irq</code> in <code>smc_ism.c:526-528</code>) holds <code>smcd-&gt;lock</code> during the entire conn read and tasklet schedule, preventing this race. The loopback path should similarly hold <code>smcd-&gt;lock</code> when accessing <code>conn</code> and scheduling its tasklet.
+    </div>
+  </div>
+
+  <h3>False positives PatchWise caught itself</h3>
+
+  <div class="finding fp">
+    <div class="finding-title">DMA address portability concern (dropped)</div>
+    <div class="finding-file">net/smc/smc_loopback.c:21</div>
+    <div class="finding-body">
+      <code>SMC_DMA_ADDR_INVALID</code> as <code>~(dma_addr_t)0</code> may not be portable. The constant <code>~(dma_addr_t)0</code> is used to indicate an invalid DMA address for loopback-ism where no real DMA mapping exists. While this works on architectures where <code>dma_addr_t</code> is 32 or 64 bits, the SMC core and ISM framework may pass <code>dma_addr</code> to DMA mapping/sync APIs. If any code path passes this sentinel to <code>dma_map_single()</code>, <code>dma_sync_single_for_cpu()</code>, or similar, it could cause undefined behavior on architectures where <code>~(dma_addr_t)0</code> is a valid DMA address (e.g., on systems with limited DMA addressing where the top address range is valid). The ISM framework should be checked to verify it handles this sentinel correctly.
+    </div>
+  </div>
+
+  <div class="finding fp">
+    <div class="finding-title">sba_idx bounds validation (dropped)</div>
+    <div class="finding-file">net/smc/smc_loopback.c:163</div>
+    <div class="finding-body">
+      While <code>smc_lo_register_dmb</code> validates <code>sba_idx &lt; SMC_LO_MAX_DMBS</code> (5000) during allocation, <code>smc_lo_move_data</code> uses <code>rmb_node-&gt;sba_idx</code> (originally set during registration) to index <code>smcd-&gt;conn[]</code> without re-validating. If a DMB node was registered before <code>SMC_LO_MAX_DMBS</code> was changed, or if the token lookup finds a stale/corrupted node, the index could be out of bounds. Additionally, the conn array is sized to <code>max_dmbs</code> (<code>SMC_LO_MAX_DMBS</code>) in <code>smcd_lo_alloc_dev</code>, but there's no runtime check that <code>rmb_node-&gt;sba_idx &lt; ARRAY_SIZE(smcd-&gt;conn)</code>.
+    </div>
+  </div>
+
+  <h2>The inline review</h2>
+
+  <p>
+    PatchWise's <code>aicodereview.txt</code> is an inline review that annotates the commit diff directly, with findings bracketed next to the relevant lines. Here's the full output:
+  </p>
+
+  <div class="inline-review">&gt; net/smc: implement DMB-related operations of loopback-ism
+&gt;
+&gt; This implements DMB (un)registration and data move operations of
+&gt; loopback-ism device.
+&gt;
+&gt; Signed-off-by: Wen Gu &lt;guwen@linux.alibaba.com&gt;
+&gt; Reviewed-by: Wenjia Zhang &lt;wenjia@linux.ibm.com&gt;
+&gt; Reviewed-and-tested-by: Jan Karcher &lt;jaka@linux.ibm.com&gt;
+&gt; Signed-off-by: Paolo Abeni &lt;pabeni@redhat.com&gt;
+&gt;
+&gt; diff --git a/net/smc/smc_loopback.c b/net/smc/smc_loopback.c
+
+[ ... ]
+
+&gt; @@ -48,6 +50,125 @@ static int smc_lo_query_rgid(struct smcd_dev *smcd, struct smcd_gid *rgid,
+
+[ ... ]
+
+&gt; +	read_lock_bh(&amp;ldev-&gt;dmb_ht_lock);
+&gt; +	hash_for_each_possible(ldev-&gt;dmb_ht, tmp_node, list, dmb_tok) {
+&gt; +		if (tmp_node-&gt;token == dmb_tok) {
+&gt; +			rmb_node = tmp_node;
+&gt; +			break;
+&gt; +		}
+&gt; +	}
+&gt; +	if (!rmb_node) {
+&gt; +		read_unlock_bh(&amp;ldev-&gt;dmb_ht_lock);
+&gt; +		return -EINVAL;
+&gt; +	}
+&gt; +	memcpy((char *)rmb_node-&gt;cpu_addr + offset, data, size);
+<span class="annotation main">[bounds checking and write atomicity] Missing bounds check for offset+size
+against rmb_node-&gt;len before memcpy. Unbounded offsets allow writes past
+the allocated buffer, causing memory corruption. Validate that offset +
+size &lt;= rmb_node-&gt;len before copying data.</span>
+&gt; +
+&gt; +	read_unlock_bh(&amp;ldev-&gt;dmb_ht_lock);
+<span class="annotation">[lock granularity and hot-path performance] Excessive lock hold time during
+memcpy. read_lock_bh covers hash lookup, memcpy, and unlock, blocking
+writers and risking starvation. Copy token and sba_idx to local variables,
+release the lock, then perform the memcpy outside the critical section.</span>
+&gt; +
+&gt; +	if (sf) {
+&gt; +		conn = smcd-&gt;conn[rmb_node-&gt;sba_idx];
+&gt; +		if (conn &amp;&amp; !conn-&gt;killed)
+&gt; +			tasklet_schedule(&amp;conn-&gt;rx_tsklet);
+<span class="annotation">[concurrency and node lifetime management] Use-after-free race in
+smc_lo_move_data. The code dereferences rmb_node after dropping
+read_lock_bh. Between unlocking and accessing rmb_node,
+smc_lo_unregister_dmb can free the node. Hold a reference (e.g., RCU or
+refcount) to extend its lifetime, or read sba_idx before releasing the
+lock.</span>
+
+
+<span class="annotation">[connection notification and tasklet scheduling] Unprotected access to
+smcd-&gt;conn[] array. The connection pointer is read without holding
+smcd-&gt;lock, risking stale or freed memory access. Hold smcd-&gt;lock during
+connection array reads, following the pattern used in smc_ism.c.</span>
+&gt; +		else
+
+<span class="annotation">[connection notification and tasklet scheduling] Race on conn-&gt;killed check
+without lock protection. The connection can be freed between the null check
+and tasklet_schedule. Hold smcd-&gt;lock during the entire connection access
+and tasklet scheduling sequence to prevent use-after-free.</span>
+
+
+[ ... ]
+
+&gt; @@ -146,6 +267,8 @@ static void smcd_lo_unregister_dev(struct smc_lo_dev *ldev)
+&gt;  static int smc_lo_dev_init(struct smc_lo_dev *ldev)
+&gt;  {
+&gt;  	smc_lo_generate_ids(ldev);
+&gt; +	rwlock_init(&amp;ldev-&gt;dmb_ht_lock);
+&gt; +	hash_init(ldev-&gt;dmb_ht);
+&gt;  	return smcd_lo_register_dev(ldev);
+&gt;  }
+
+<span class="annotation">[memory allocation and error unwind paths] Missing cleanup of DMB nodes on
+module exit. smcd_lo_unregister_dev() does not free registered
+smc_lo_dmb_node structures or their cpu_addr allocations. Iterate through
+the dmb_ht hash table and free all entries during module exit to prevent
+memory leaks.</span></div>
+
+  <h2>What Claude Code found</h2>
+
+  <p>
+    Three findings. Two overlapped with PatchWise, one was unique.
+  </p>
+
+  <div class="finding">
+    <div class="finding-title">Race condition on smcd-&gt;conn[] access</div>
+    <div class="finding-file">net/smc/smc_loopback.c:163</div>
+    <div class="finding-body">
+      <code>smc_lo_move_data</code> reads <code>smcd-&gt;conn[rmb_node-&gt;sba_idx]</code> while only holding the read side of <code>dmb_ht_lock</code>. However, the <code>smcd-&gt;conn</code> array is protected by <code>smcd-&gt;lock</code> (a spinlock), as shown in:
+      <ul>
+        <li><code>smc_ism_set_conn()</code> (line 99) — writes to <code>smcd-&gt;conn[]</code> under <code>smcd-&gt;lock</code></li>
+        <li><code>smc_ism_unset_conn()</code> (line 112) — writes to <code>smcd-&gt;conn[]</code> under <code>smcd-&gt;lock</code></li>
+        <li><code>smcd_handle_irq()</code> (line 525) — reads <code>smcd-&gt;conn[]</code> under <code>smcd-&gt;lock</code></li>
+      </ul>
+      The fix: acquire <code>smcd-&gt;lock</code> (or at minimum a read-side equivalent) when accessing <code>smcd-&gt;conn[]</code>. Currently, <code>smc_lo_move_data</code> could race with <code>smc_ism_set_conn</code>/<code>unset_conn</code>, leading to use-after-free or NULL dereference.
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-title">Memory leak on device exit</div>
+    <div class="finding-file">net/smc/smc_loopback.c:275</div>
+    <div class="finding-body">
+      <code>smc_lo_dev_exit()</code> → <code>smcd_lo_unregister_dev()</code> only frees <code>smcd-&gt;conn</code> and <code>smcd</code>. It does not iterate over and free the DMB hash table (<code>ldev-&gt;dmb_ht</code>). If any DMBs are still registered when the module unloads, all <code>smc_lo_dmb_node</code> structs and their <code>cpu_addr</code> buffers are leaked.
+    </div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-title">Data copied but error returned when sf=true and connection invalid</div>
+    <div class="finding-file">net/smc/smc_loopback.c:159,167</div>
+    <div class="finding-body">
+      When <code>sf</code> (shutdown/finish) is true and <code>conn</code> is NULL or killed, the function returns <code>-EPIPE</code> after already performing the <code>memcpy</code>. The data is written to the RMB buffer but the caller (<code>smc_ism_write</code>) receives an error. This is inconsistent — either the data shouldn't be copied, or the error shouldn't be returned.
+    </div>
+  </div>
+
+  <h2>The comparison</h2>
+
+  <p>
+    PatchWise found the bounds check bug, the one that was later fixed. It also found five more issues that Claude Code missed. Perhaps, it's that I missed "make no mistakes" :)
+  </p>
+
+  <h2>Takeaways</h2>
+
+  <p>
+    <strong>Setting up automated code review with a local model is genuinely easy now.</strong> PatchWise config was three lines of YAML. No API keys, no cloud calls, no usage limits. Point it at a commit and it does its thing.
+  </p>
+
+  <p>
+    <strong>How you structure the analysis matters more than the model size.</strong> Same model, same commit, same PC. One tool found the correct bug, one didn't.
+  </p>
+
+  <p>
+    <strong>Models that fit in 32 GB of RAM + 16 GB of VRAM can catch real bugs.</strong> This wasn't Fable or Astra. It was a Q4 quantized model running entirely on my RTX 4070 Ti Super, with llama.cpp tuned to squeeze through the memory constraint. The tooling made the difference: it gave the model context and structure that a single prompt doesn't.
+  </p>
+
+  <h2>What PatchWise's UI looks like</h2>
+
+  <p>
+    PatchWise runs in four phases: plan -&gt; critic -&gt; exec -&gt; filter. Click any screenshot to inspect it full-size.
+  </p>
+
+  <div class="screenshots">
+    <div class="shot" onclick="openLightbox(this)">
+      <img src="patchwise-ui-01.png" data-full="patchwise-ui-01.png" alt="PatchWise planning and critique phases">
+      <div class="screenshot-caption">Phase 1 — Plan + Critic: planning defines analysis tasks; critique surfaces initial coverage gaps</div>
+    </div>
+    <div class="shot" onclick="openLightbox(this)">
+      <img src="patchwise-ui-02.png" data-full="patchwise-ui-02.png" alt="PatchWise refined plan with 8 tasks">
+      <div class="screenshot-caption">Phase 2 — Exec: execution runs 8 focused analysis tasks</div>
+    </div>
+    <div class="shot" onclick="openLightbox(this)">
+      <img src="patchwise-ui-03.png" data-full="patchwise-ui-03.png" alt="PatchWise filter phase verdicts">
+      <div class="screenshot-caption">Phase 3 — FP-filter: each finding gets a verdict with proof chain</div>
+    </div>
+    <div class="shot" onclick="openLightbox(this)">
+      <img src="patchwise-ui-04.png" data-full="patchwise-ui-04.png" alt="PatchWise final output">
+      <div class="screenshot-caption">Phase 4 — Report: 6 confirmed findings</div>
+    </div>
+  </div>
+
+  <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+    <img id="lb-img" src="" alt="">
+    <div class="lb-caption" id="lb-caption"></div>
+  </div>
+
+  <script>
+    function openLightbox(el) {
+      var img = el.querySelector('img');
+      var lb = document.getElementById('lightbox');
+      var lbImg = document.getElementById('lb-img');
+      var lbCap = document.getElementById('lb-caption');
+      lbImg.src = img.getAttribute('data-full') || img.src;
+      lbImg.alt = img.alt;
+      lbCap.textContent = img.closest('.shot').querySelector('.screenshot-caption').textContent;
+      lb.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox() {
+      var lb = document.getElementById('lightbox');
+      lb.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeLightbox();
+    });
+  </script>
+
+  <h2>Raw data</h2>
+
+  <p>
+    All the source data is in this repo if you want to dig into it:
+  </p>
+
+  <ul style="padding-left: 1.5rem; margin-bottom: 1rem;">
+    <li><code>aicodereview.txt</code> — PatchWise final review output</li>
+    <li><code>claude-code-review.txt</code> — Claude Code review output</li>
+    <li><code>observability.json</code> — PatchWise execution metrics</li>
+    <li><code>tool_calls.log</code> — PatchWise tool call trace (77 calls)</li>
+    <li><code>patchwise-ui.log</code> — PatchWise full console output</li>
+    <li><code>llama-server.log</code> — llama.cpp server log</li>
+  </ul>
+
+  <footer>
+    <p>
+  <p>
+    P.S., I did not write the code for this page, I worked with the same local model to do it :)
+  </p>
+
+      Aditya Chillara
+    </p>
+  </footer>
+
+</body>
+</html>
